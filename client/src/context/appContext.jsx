@@ -27,7 +27,7 @@ const AppContextProvider = (props) => {
       const { data } = await axios.get(backendURL + "/api/user/credits", {
         headers: { token: token },
       });
-      if (data && data.credits) {
+      if (data && data.credits !== undefined) {
         setCredit(data.credits);
         console.log("Credits loaded:", data.credits);
       }
@@ -42,9 +42,38 @@ const AppContextProvider = (props) => {
       if (!isSignedIn) {
         return openSignIn();
       }
+      if(!image) {
+        return toast.error("Please upload an image first");
+      }
+      if(!credit) {
+        return toast.error("You have no credits left. Please purchase more credits to continue.");
+      }
       setImage(image);
       setResultImage(false);
       navigate("/result");
+
+      const token = await getToken();
+      const formData = new FormData();
+      image && formData.append("image", image);
+
+      const {data} = await axios.post(backendURL+ "/api/image/remove-bg", formData, {
+        headers: {token}
+      });
+
+      if(data.success) {
+        setResultImage(data.resultImage);
+        data.creditBalance && setCredit(data.creditBalance);
+        console.log("Background removed successfully:", data.resultImage);
+      } else {
+        console.error("Error removing background:", data.error);
+        data.creditBalance && setCredit(data.creditBalance);
+        toast.error(data.error);
+        if(data.creditBalance === 0) {
+          toast.error("You have no credits left. Please purchase more credits to continue.");
+          navigate("/pricing");
+        }
+      }
+
     } catch (error) {
       console.error("Error removing background:", error);
       toast.error(error.message);
@@ -59,6 +88,7 @@ const AppContextProvider = (props) => {
     image,
     setImage,
     removeBg,
+    resultImage, setResultImage
   };
   return (
     <AppContext.Provider value={value}>{props.children}</AppContext.Provider>

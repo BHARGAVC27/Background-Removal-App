@@ -1,9 +1,41 @@
-import React, { useState } from "react";
+import React from "react";
 import { assets } from "../../assets/assets";
+import { useContext, useEffect } from "react";
+import { AppContext } from "../context/appContext";
+import { useNavigate } from "react-router-dom";
 
 const Result = () => {
-  const [isProcessing, setIsProcessing] = useState(true);
-  const [processedImage, setProcessedImage] = useState(null);
+  const { resultImage, image, setImage, setResultImage } = useContext(AppContext);
+  const navigate = useNavigate();
+  
+  // Redirect to home if no image data after page load
+  useEffect(() => {
+    // Small delay to allow context to initialize
+    const timer = setTimeout(() => {
+      if (!image && !resultImage) {
+        console.log("No images found, redirecting to home...");
+        navigate('/');
+      }
+    }, 1000);
+    
+    return () => clearTimeout(timer);
+  }, [image, resultImage, navigate]);
+  
+  // Determine processing state based on context
+  const isProcessing = image && !resultImage;
+  const hasProcessedImage = !!resultImage;
+
+  // Download function
+  const downloadImage = () => {
+    if (!resultImage) return;
+    
+    const link = document.createElement('a');
+    link.href = resultImage;
+    link.download = 'background-removed-image.png';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="mx-4 my-3 lg:mx-44 mt-14 min-h-screen">
@@ -14,11 +46,21 @@ const Result = () => {
           <div className="flex-1 text-center">
             <p className="pb-4 font-semibold text-gray-600 text-lg">Original</p>
             <div className="w-full aspect-[4/3] max-w-md mx-auto">
-              <img
-                src={assets.image_w_bg}
-                className="w-full h-full object-cover rounded-lg shadow-md"
-                alt="Original with background"
-              />
+              {image ? (
+                <img
+                  src={URL.createObjectURL(image)}
+                  className="w-full h-full object-contain rounded-lg shadow-md"
+                  alt="Original with background"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gray-100 rounded-lg shadow-md border-2 border-dashed border-gray-300">
+                  <div className="text-center text-gray-500">
+                    <div className="text-4xl mb-2">📸</div>
+                    <p className="text-sm">No image uploaded</p>
+                    <p className="text-xs mt-1">Upload an image to get started</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -40,11 +82,11 @@ const Result = () => {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mb-3"></div>
                     <p className="text-gray-600 text-sm font-medium">Processing...</p>
                   </div>
-                ) : processedImage ? (
+                ) : hasProcessedImage ? (
                   /* Processed Image */
                   <img
-                    src={processedImage}
-                    className="w-full h-full object-cover rounded-lg"
+                    src={resultImage}
+                    className="w-full h-full object-contain rounded-lg"
                     alt="Background removed"
                   />
                 ) : (
@@ -64,19 +106,22 @@ const Result = () => {
           <button 
             className="inline-flex items-center gap-2 px-8 py-3 border-2 border-yellow-500 hover:bg-blue-50 font-semibold rounded-full transition-all duration-300 hover:scale-105"
             onClick={() => {
-              // Navigate back to upload or reset
-              setIsProcessing(true);
-              setProcessedImage(null);
+              // Reset images and navigate to home
+              setImage(null);
+              setResultImage(null);
+              navigate('/');
             }}
           >
+            <img src={assets.upload_icon} alt="Upload" className="w-4 h-4" />
             Try another image
           </button>
           
           <button 
+            onClick={downloadImage}
             className={`inline-flex items-center gap-2 px-8 py-3 border-2 border-blue-500 hover:bg-yellow-50 font-semibold rounded-full transition-all duration-300 hover:scale-105 hover:shadow-lg ${
-              isProcessing || !processedImage ? 'opacity-50 cursor-not-allowed' : ''
+              isProcessing || !hasProcessedImage ? 'opacity-50 cursor-not-allowed' : ''
             }`}
-            disabled={isProcessing || !processedImage}
+            disabled={isProcessing || !hasProcessedImage}
           >
             <img src={assets.download_icon} alt="Download" className="w-4 h-4" />
             Download image
