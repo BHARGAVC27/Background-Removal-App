@@ -1,7 +1,157 @@
-import React from 'react'
+import React, { useState, useContext } from 'react'
 import { assets, plans } from "../../assets/assets";
+import { AppContext } from '../context/appContext';
+import { useAuth, useUser } from '@clerk/clerk-react';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'react-toastify';
+import axios from 'axios';
 
 const BuyCredit = () => {
+  const { backendURL, loadCreditsData } = useContext(AppContext);
+  const { getToken } = useAuth();
+  const { user } = useUser();
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('credit_card');
+
+  // Handle payment
+  const handlePayment = async (planId) => {
+    if (!user) {
+      toast.error('Please sign in to purchase credits');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const token = await getToken();
+      
+      // Create payment session
+      const { data: sessionData } = await axios.post(
+        `${backendURL}/api/payment/create-session`,
+        {
+          clerkId: user.id,
+          plan: planId
+        },
+        {
+          headers: { token }
+        }
+      );
+
+      if (sessionData.success) {
+        // Show payment modal/form
+        showPaymentForm(sessionData.sessionId, planId, sessionData.plan);
+      } else {
+        toast.error(sessionData.error || 'Failed to create payment session');
+      }
+    } catch (error) {
+      console.error('Payment error:', error);
+      toast.error('Failed to initiate payment');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const showPaymentForm = (sessionId, planId, planDetails) => {
+    const paymentForm = document.createElement('div');
+    paymentForm.innerHTML = `
+      <div id="payment-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg max-w-md w-full mx-4">
+          <h3 class="text-xl font-bold mb-4">Complete Payment</h3>
+          <div class="mb-4">
+            <p class="text-gray-600">Plan: <strong>${planDetails.name}</strong></p>
+            <p class="text-gray-600">Credits: <strong>${planDetails.credits}</strong></p>
+            <p class="text-gray-600">Amount: <strong>$${planDetails.price}</strong></p>
+          </div>
+          
+          <div class="mb-4">
+            <label class="block text-sm font-medium mb-2">Payment Method</label>
+            <select id="payment-method" class="w-full p-2 border rounded">
+              <option value="credit_card">Credit Card</option>
+              <option value="debit_card">Debit Card</option>
+              <option value="paypal">PayPal</option>
+            </select>
+          </div>
+
+          <div class="mb-4">
+            <label class="block text-sm font-medium mb-2">Card Number</label>
+            <input type="text" placeholder="1234 5678 9012 3456" value="4111 1111 1111 1111" class="w-full p-2 border rounded">
+          </div>
+
+          <div class="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label class="block text-sm font-medium mb-2">Expiry</label>
+              <input type="text" placeholder="MM/YY" value="12/25" class="w-full p-2 border rounded">
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-2">CVV</label>
+              <input type="text" placeholder="123" value="123" class="w-full p-2 border rounded">
+            </div>
+          </div>
+
+          <div class="flex gap-4">
+            <button id="process-payment" class="flex-1 bg-blue-500 text-white p-2 rounded hover:bg-blue-600 cursor">
+              Pay $${planDetails.price}
+            </button>
+            <button id="cancel-payment" class="flex-1 bg-gray-300 text-gray-700 p-2 rounded hover:bg-gray-400">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(paymentForm);
+
+    // Handle payment processing
+    document.getElementById('process-payment').onclick = () => processPayment(sessionId, planId);
+    document.getElementById('cancel-payment').onclick = () => document.body.removeChild(paymentForm);
+  };
+
+  // Process the payment
+  const processPayment = async (sessionId, planId) => {
+    try {
+      const paymentMethod = document.getElementById('payment-method').value;
+      const token = await getToken();
+      
+      const { data } = await axios.post(
+        `${backendURL}/api/payment/process`,
+        {
+          sessionId,
+          plan: planId,
+          paymentMethod,
+          clerkId: user.id
+        },
+        {
+          headers: { token }
+        }
+      );
+
+      // Remove modal
+      const modal = document.getElementById('payment-modal');
+      if (modal) {
+        modal.remove();
+      }
+
+      if (data.success) {
+        toast.success(`Payment successful! ${data.creditsAdded} credits added to your account.`);
+        loadCreditsData(); // Refresh credits
+        
+        // Redirect to success page with transaction details
+        navigate(`/payment-success?transaction=${data.transactionId}&credits=${data.creditsAdded}`);
+      } else {
+        toast.error(data.error || 'Payment failed');
+      }
+    } catch (error) {
+      console.error('Payment processing error:', error);
+      toast.error('Payment failed. Please try again.');
+      
+      // Remove modal on error
+      const modal = document.getElementById('payment-modal');
+      if (modal) {
+        modal.remove();
+      }
+    }
+  };
   return (
     <div className='min-h-screen text-center pt-14 mb-10 px-4 lg:px-44'>
       {/* Header Section */}
@@ -77,8 +227,12 @@ const BuyCredit = () => {
 
             {/* CTA Button - positioned at bottom */}
             <div className="mt-auto">
-              <button className="w-full py-3 px-6 bg-gradient-to-r from-blue-500 to-yellow-900 hover:from-blue-600 hover:to-yellow-800 text-white font-semibold rounded-full transition-all duration-300 hover:scale-105 hover:shadow-lg">
-                {index === 0 ? 'Get started' : index === 1 ? 'Get started' : 'Purchase'}
+              <button 
+                onClick={() => handlePayment(plan.id)}
+                disabled={loading}
+                className="w-full py-3 px-6 bg-gradient-to-r from-blue-500 to-yellow-900 hover:from-blue-600 hover:to-yellow-800 text-white font-semibold rounded-full transition-all duration-300 hover:scale-105 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Processing...' : `Purchase $${plan.price}`}
               </button>
             </div>
           </div>
